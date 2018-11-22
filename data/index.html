@@ -1,0 +1,191 @@
+﻿<!DOCTYPE html>
+<html lang="de" ng-app="SensorMaster">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <title>Sensors and Statistics</title>
+    <script src="\angular.min.js"></script>
+    <script src="\angular-gauges.js"></script>
+    <script src="\moment.min.js"></script>
+    <script src="\Chart.min.js"></script>
+    <script src="\linq.min.js"></script>
+    <link href="\bootstrap.min.css" rel="stylesheet">
+    <link href="\style.css" rel="stylesheet">
+</head>
+<body ng-controller="MainController">
+    <nav class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+        <div class="container">
+            <div class="navbar-header">
+                <a class="navbar-brand" href="#">Sensors and Statistics</a>
+            </div>
+        </div>
+    </nav>
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-12">
+                <table class="table table-responsive table striped">
+                    <thead>
+                        <tr>
+                            <th>MAC</th>
+                            <th>Version</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr ng-repeat="sensor in Sensors" ng-show="sensor.SensorMAC.length > 0" ng-click="getStatistics(sensor.SensorMAC)">
+                            <td>{{sensor.SensorMAC}}</td>
+                            <td>{{sensor.FunctionVersion}}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="col-lg-12">
+                <div class="col-md-6">
+                    <h2>Values</h2>
+                    <table class="table table-responsive table striped">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Temp</th>
+                                <th>Hum</th>
+                                <th>Press</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr ng-repeat="values in Statistics">
+                                <td>{{values.Timestamp}}</td>
+                                <td>{{values.Temp}}</td>
+                                <td>{{values.Hum}}</td>
+                                <td>{{values.Press}}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <canvas id="canvas"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="text/javascript">
+        window.chartColors = {
+            red: 'rgb(255, 99, 132)',
+            orange: 'rgb(255, 159, 64)',
+            yellow: 'rgb(255, 205, 86)',
+            green: 'rgb(75, 192, 192)',
+            blue: 'rgb(54, 162, 235)',
+            purple: 'rgb(153, 102, 255)',
+            grey: 'rgb(201, 203, 207)'
+        };
+        var color = Chart.helpers.color;
+        var config = {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'Humidity',
+                    backgroundColor: color(window.chartColors.red).alpha(0.5).rgbString(),
+                    borderColor: window.chartColors.red,
+                    fill: false,
+                    data: []
+                }, {
+                    label: 'Temperature',
+                    backgroundColor: color(window.chartColors.blue).alpha(0.5).rgbString(),
+                    borderColor: window.chartColors.blue,
+                    fill: false,
+                    data: []
+                },
+                {
+                    label: 'Pressure',
+                    backgroundColor: color(window.chartColors.orange).alpha(0.5).rgbString(),
+                    borderColor: window.chartColors.orange,
+                    fill: false,
+                    data: []
+                }
+                ]
+            },
+            options: {
+                responsive: true,
+                title: {
+                    display: true,
+                    text: 'Sensor Data: '
+                },
+                scales: {
+                    xAxes: [{
+                        type: 'time',
+                        display: true,
+                        scaleLabel: {
+                            display: true,
+                            labelString: 'DateTime'
+                        },
+                        ticks: {
+                            major: {
+                                fontStyle: 'bold',
+                                fontColor: '#FF0000'
+                            }
+                        }
+                    }],
+                    yAxes: [{
+                        display: true,
+                        scaleLabel: {
+                            display: true,
+                            labelString: 'value'
+                        }
+                    }]
+                }
+            }
+        };
+        var ctx = document.getElementById('canvas').getContext('2d');
+        window.myLine = new Chart(ctx, config);
+    </script>
+    <script type="text/javascript">
+        var app = angular
+            .module('SensorMaster', ['angularjs-gauge'])
+            .controller('MainController', function ($scope, $http, $interval) {
+                $scope.Sensors = [];
+                $scope.Statistics = []
+                $scope.getSensors = function () {
+                    $http({
+                        method: 'GET',
+                        url: '/devices.json'
+                    }).then(function successCallback(response) {
+                        $scope.Sensors = response.data;
+                    });
+                };
+                $scope.getStatistics = function (MAC) {
+                    $http({
+                        method: 'GET',
+                        url: '/getStatistics?MAC=' + MAC
+                    }).then(function successCallback(response) {
+                        var tmp = response.data.split('\n');
+                        var Values = Enumerable.from(tmp).select(function (i) {
+                            var Time = i.substring(0, 19);
+                            var Values = i.substring(20).split(" ");
+                            return { Timestamp: Time, Temp: Values[0], Hum: Values[1], Press: Values[2] };
+                        });
+                        config.data.datasets[0].data = Values
+                            .where(function (x) { return x.Hum != -1 && moment(x.Timestamp).isAfter(moment().add(-1, 'days'));  })
+                            .select(function (x) { return { x: x.Timestamp, y: x.Hum }; })
+                            .toArray();
+                        config.data.datasets[1].data = Values
+                            .where(function (x) { return x.Temp != -1 && moment(x.Timestamp).isAfter(moment().add(-1, 'days')); })
+                            .select(function (x) { return { x: x.Timestamp, y: x.Temp }; })
+                            .toArray();
+                        config.data.datasets[2].data = Values
+                            .where(function (x) { return x.Press != -1 && moment(x.Timestamp).isAfter(moment().add(-1, 'days')); })
+                            .select(function (x) { return { x: x.Timestamp, y: x.Press }; })
+                            .toArray();
+                        config.options.title.text = "Sensor Data: " + MAC;
+                        window.myLine.update(config);
+                        $scope.Statistics = Values
+                            .where(function (x) { return x.Temp != -1; })
+                            .orderByDescending(function (x) { return x.Timestamp; })
+                            .toArray();
+                    });
+                };
+                $scope.getSensors();
+                $interval($scope.getSensors, 5000);
+            });
+    </script>
+</body>
+</html>

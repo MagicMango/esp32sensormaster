@@ -1,0 +1,10 @@
+body {
+  padding-top: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+span.ng-binding.ng-scope,
+span.ng-binding.ng-scope {
+    font-size: xx-large;
+}
