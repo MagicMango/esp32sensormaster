@@ -2,8 +2,6 @@
 #include <ArduinoJson.h>
 #include <FS.h>
 #include "SPIFFS.h"
-#include <EasyNTPClient.h>
-#include <WiFiUdp.h>
 #include "ESPAsyncWebServer.h"
 #include "esp_wifi.h"
 #include <HTTPClient.h>
@@ -20,13 +18,12 @@ String macToString(uint8_t mac[]);
 void handleRoot(AsyncWebServerRequest *request);
 void handleWebRequests(AsyncWebServerRequest *request);
 bool loadFromSpiffs(AsyncWebServerRequest *request, String path);
-String getTime();
-String getTimeStamp(unsigned long unixTime, const char* format);
 SensorInfo parseSensorInfo(String JSONMessage);
 SensorData parseSensorData(String JSONMessage, String v);
 void saveSensorSettings();
 void StationGotIp(WiFiEvent_t event, WiFiEventInfo_t info);
 void WifiDisconnected(WiFiEvent_t event, WiFiEventInfo_t info);
+String getTime();
 
 static Configuration conf;
 //10 Seconds
@@ -34,7 +31,7 @@ static Sensor sensors[8];
 const String dataFolder = "/sensordata/";
 static StaticJsonBuffer<JSON_ARRAY_SIZE(8) + JSON_OBJECT_SIZE(8 * 4)> jsonBuffer;
 static StaticJsonBuffer<JSON_ARRAY_SIZE(8) + JSON_OBJECT_SIZE(8 * 4)> sensorBuffer;
-static unsigned long Timestamp;
+
 
 AsyncWebServer server(80);
 
@@ -60,6 +57,19 @@ void loop() {
 		ESP.restart();
 	}
 }
+
+String getTime()
+{
+	struct tm timeinfo;
+	char buffer[80];
+	if (!getLocalTime(&timeinfo)) {
+		Serial.println(F("Failed to obtain time"));
+		return "";
+	}
+	strftime(buffer, 80,"%Y-%m-%d %H:%M:%S", &timeinfo);
+	return String(buffer);
+}
+
 void initWifi() {
 	char ssid[conf.ssid.length() + 1];
 	char password[conf.password.length() + 1];
@@ -78,16 +88,8 @@ void initWifi() {
 	Serial.println(ssid);
 	Serial.print(F("IP address: "));
 	Serial.println(WiFi.localIP());  
-	WiFiUDP udp;
-	EasyNTPClient ntpClient(udp, "de.pool.ntp.org", ((1 * 60 * 60))); // IST = GMT + 2 Summertime GMT + 1 Wintertime
-	unsigned long tmptime = 0;
-	while (tmptime == 0 || tmptime >= 4294960000) {
-		tmptime = ntpClient.getUnixTime() - (millis() / 1000);
-		Timestamp = tmptime;
-		Serial.println("Unixtime: " + String(tmptime));
-		delay(500);
-	}
-	Serial.println("Controller started at: " + getTime());
+	configTime(3600, 3600,"de.pool.ntp.org");
+	Serial.println(getTime());
 	if (WiFi.softAP("ESP32Master", "[a secure password]", 6, false, 8)) {
 		Serial.println(F("AP Started."));
 		Serial.print(F("APIP: "));
@@ -210,16 +212,6 @@ String macToString(uint8_t  mac[]) {
 	snprintf(buf, sizeof(buf), "%02x:%02x:%02x:%02x:%02x:%02x",
 		mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	return String(buf);
-}
-String getTime() {
-	return getTimeStamp(Timestamp + (millis() / 1000), "%Y-%m-%d %H:%M:%S");
-}
-String getTimeStamp(unsigned long unixTime, const char* format)
-{
-	time_t epochTime = (time_t)(unixTime);
-	char timestamp[64] = { 0 };
-	strftime(timestamp, sizeof(timestamp), format, localtime(&epochTime));
-	return timestamp;
 }
 void getStatistics(AsyncWebServerRequest *request) {
 	if (request->args() == 1) {
